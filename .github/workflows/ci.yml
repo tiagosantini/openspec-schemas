@@ -51,6 +51,24 @@ jobs:
             (cd "$project" && openspec schema validate "$name")
           done
 
+      - name: Check version pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'x-release-please-version' scripts/install.sh
+          grep -q 'x-release-please-version' scripts/install.ps1
+
+          expected="$(tr -d '[:space:]' < version.txt)"
+          pinned_sh="$(sed -n 's/^DEFAULT_REF="v\([^"]*\)" # x-release-please-version$/\1/p' scripts/install.sh)"
+          pinned_ps="$(awk -F"'" '/^\$DefaultRef = /{ print $2 }' scripts/install.ps1 | sed 's/^v//')"
+
+          for pinned in "$pinned_sh" "$pinned_ps"; do
+            if [ "$pinned" != "$expected" ]; then
+              echo "::error::Installer pin '$pinned' does not match version.txt '$expected'"
+              exit 1
+            fi
+          done
+
       - name: ShellCheck
         shell: bash
         run: |
@@ -129,6 +147,72 @@ jobs:
             Pop-Location
           }
 
+      - name: Test update workflow for install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$RUNNER_TEMP/update-project"
+          stamp="$project/openspec/schemas/prototype-first/.install.json"
+          expected="$(tr -d '[:space:]' < version.txt)"
+          openspec init "$project" --tools none --no-animation
+
+          ./scripts/install.sh --dir "$project"
+          python3 -m json.tool "$stamp" >/dev/null
+          ./scripts/install.sh --dir "$project" --version | grep -q "Installed: ${expected} "
+          ./scripts/install.sh --dir "$project" --check
+
+          printf '\n<!-- local edit -->\n' >>"$project/openspec/schemas/prototype-first/templates/prototype.html"
+          if ./scripts/install.sh --dir "$project" --upgrade; then
+            echo "::error::Upgrade accepted an edited schema"
+            exit 1
+          fi
+          ./scripts/install.sh --dir "$project" --upgrade --force
+          if grep -q 'local edit' "$project/openspec/schemas/prototype-first/templates/prototype.html"; then
+            echo "::error::Force upgrade did not replace the edited file"
+            exit 1
+          fi
+          test -d "$project/openspec/.schema-backups"
+          ./scripts/install.sh --dir "$project" --check
+
+      - name: Test update workflow for install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:RUNNER_TEMP 'update-project'
+          $stamp = Join-Path $project 'openspec/schemas/prototype-first/.install.json'
+          $template = Join-Path $project 'openspec/schemas/prototype-first/templates/prototype.html'
+          $expected = ([IO.File]::ReadAllText('version.txt')).Trim()
+          openspec init $project --tools none --no-animation
+
+          ./scripts/install.ps1 -Dir $project
+          Get-Content -Raw $stamp | ConvertFrom-Json | Out-Null
+          $versionOutput = ./scripts/install.ps1 -Dir $project -Version
+          if (-not ($versionOutput -join "`n").Contains("Installed: $expected")) {
+            throw 'The version stamp does not report the expected version.'
+          }
+          ./scripts/install.ps1 -Dir $project -Check
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Check reported an outdated installation.'
+          }
+
+          Add-Content -Path $template -Value '<!-- local edit -->'
+          ./scripts/install.ps1 -Dir $project -Upgrade
+          if ($LASTEXITCODE -eq 0) {
+            throw 'Upgrade accepted an edited schema.'
+          }
+          ./scripts/install.ps1 -Dir $project -Upgrade -Force
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Force upgrade failed.'
+          }
+          if (Select-String -Path $template -Pattern 'local edit' -Quiet) {
+            throw 'Force upgrade kept the edited file.'
+          }
+          if (-not (Test-Path (Join-Path $project 'openspec/.schema-backups'))) {
+            throw 'No backup of the edited installation was created.'
+          }
+
       - name: Test remote install.sh
         if: runner.os == 'Linux'
         shell: bash
@@ -143,6 +227,9 @@ jobs:
           SCHEMA_BASE_URL=http://127.0.0.1:8765/schemas/prototype-first \
             sh -s -- --dir "$project" < scripts/install.sh
           grep -q '^schema: prototype-first$' "$project/openspec/config.yaml"
+          python3 -m json.tool "$project/openspec/schemas/prototype-first/.install.json" >/dev/null
+          SCHEMA_BASE_URL=http://127.0.0.1:8765/schemas/prototype-first \
+            sh -s -- --dir "$project" --check < scripts/install.sh
 
       - name: Test remote install.ps1
         if: runner.os == 'Windows'
@@ -158,6 +245,13 @@ jobs:
             & $installer -Dir $project -BaseUrl 'http://127.0.0.1:8765/schemas/prototype-first'
             if (-not (Select-String -Path (Join-Path $project 'openspec/config.yaml') -Pattern '^schema: prototype-first$' -Quiet)) {
               throw 'The remote installer did not select the prototype-first schema.'
+            }
+            if (-not (Test-Path (Join-Path $project 'openspec/schemas/prototype-first/.install.json'))) {
+              throw 'The remote installer did not write a version stamp.'
+            }
+            & $installer -Dir $project -BaseUrl 'http://127.0.0.1:8765/schemas/prototype-first' -Check
+            if ($LASTEXITCODE -ne 0) {
+              throw 'The remote installation reported itself as outdated.'
             }
           }
           finally {

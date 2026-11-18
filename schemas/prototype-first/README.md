@@ -73,10 +73,30 @@ irm https://raw.githubusercontent.com/tiagosantini/openspec-schemas/main/scripts
 ```
 
 The installer copies the schema into `openspec/schemas/prototype-first`,
-validates it when the `openspec` CLI is available, and selects it in
-`openspec/config.yaml`. Pass `--no-select` / `-NoSelect` to leave the config
-unchanged, or `--dir <path>` / `-Dir <path>` to target a project from outside
-its root.
+validates it when the `openspec` CLI is available, selects it in
+`openspec/config.yaml`, and records the version in
+`openspec/schemas/prototype-first/.install.json`. It installs the latest
+release by default; `--ref <tag>` / `-Ref <tag>` pins a specific one.
+
+To check for updates and apply them:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tiagosantini/openspec-schemas/main/scripts/install.sh | sh -s -- --check
+curl -fsSL https://raw.githubusercontent.com/tiagosantini/openspec-schemas/main/scripts/install.sh | sh -s -- --upgrade
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/tiagosantini/openspec-schemas/main/scripts/install.ps1))) -Check
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/tiagosantini/openspec-schemas/main/scripts/install.ps1))) -Upgrade
+```
+
+`--check` exits `0` when current, `1` when an update is available, and `2` when
+the latest version cannot be determined. The upgrade refuses to overwrite files
+changed locally; `--force` / `-Force` overwrites them after keeping a copy under
+`openspec/.schema-backups/`.
+
+Pass `--no-select` / `-NoSelect` to leave the config unchanged, or
+`--dir <path>` / `-Dir <path>` to target a project from outside its root.
 
 To install manually, copy `schemas/prototype-first/` into your project's
 `openspec/schemas/` directory and select it in `openspec/config.yaml`. To
