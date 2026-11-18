@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate schemas and scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install OpenSpec
+        run: npm install --global @fission-ai/openspec@^2
+
+      - name: Validate schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$RUNNER_TEMP/openspec-validate"
+          mkdir -p "$project"
+          openspec init "$project" --tools none --no-animation
+          mkdir -p "$project/openspec/schemas"
+
+          for schema_path in "$GITHUB_WORKSPACE"/schemas/*/; do
+            schema="${schema_path%/}"
+            name="$(basename "$schema")"
+            if [ ! -f "$schema/schema.yaml" ]; then
+              echo "::error::Missing schema.yaml in $schema"
+              exit 1
+            fi
+            cp -R "$schema" "$project/openspec/schemas/$name"
+            (cd "$project" && openspec schema validate "$name")
+          done
+
+      - name: ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck scripts/install.sh
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+            Install-PackageProvider -Name NuGet -Scope CurrentUser -Force | Out-Null
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber
+          }
+          Import-Module PSScriptAnalyzer
+          $results = Invoke-ScriptAnalyzer -Path ./scripts/install.ps1 -Severity Error
+          if ($results) {
+            $results | Format-Table -AutoSize | Out-String | Write-Host
+            exit 1
+          }
+
+  installers:
+    name: Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install OpenSpec
+        run: npm install --global @fission-ai/openspec@^2
+
+      - name: Test install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$RUNNER_TEMP/install-project"
+          openspec init "$project" --tools none --no-animation
+          ./scripts/install.sh --dir "$project"
+          grep -q '^schema: prototype-first$' "$project/openspec/config.yaml"
+          (cd "$project" && openspec schema validate prototype-first)
+
+      - name: Test install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:RUNNER_TEMP 'install-project'
+          openspec init $project --tools none --no-animation
+          ./scripts/install.ps1 -Dir $project
+          if (-not (Select-String -Path (Join-Path $project 'openspec/config.yaml') -Pattern '^schema: prototype-first$' -Quiet)) {
+            throw 'The installer did not select the prototype-first schema.'
+          }
+          Push-Location $project
+          try {
+            openspec schema validate prototype-first
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Schema validation failed.'
+            }
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Test remote install.sh
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$RUNNER_TEMP/remote-project"
+          openspec init "$project" --tools none --no-animation
+          python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          sleep 1
+          SCHEMA_BASE_URL=http://127.0.0.1:8765/schemas/prototype-first \
+            sh -s -- --dir "$project" < scripts/install.sh
+          grep -q '^schema: prototype-first$' "$project/openspec/config.yaml"
+
+      - name: Test remote install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:RUNNER_TEMP 'remote-project'
+          openspec init $project --tools none --no-animation
+          $server = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1' -PassThru
+          try {
+            Start-Sleep -Seconds 1
+            $installer = [scriptblock]::Create((Invoke-RestMethod 'http://127.0.0.1:8765/scripts/install.ps1'))
+            & $installer -Dir $project -BaseUrl 'http://127.0.0.1:8765/schemas/prototype-first'
+            if (-not (Select-String -Path (Join-Path $project 'openspec/config.yaml') -Pattern '^schema: prototype-first$' -Quiet)) {
+              throw 'The remote installer did not select the prototype-first schema.'
+            }
+          }
+          finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
