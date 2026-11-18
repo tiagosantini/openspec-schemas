@@ -12,9 +12,10 @@ Adds a high-fidelity prototype step before design:
 proposal → specs → prototype → design → tasks
 ```
 
-Changes with a visible interface get self-contained HTML prototypes with
-fictional data, reviewed before design and implementation. Changes without
-interface impact record a short exemption instead.
+Changes with a visible interface get self-contained HTML prototypes derived
+from the proposal and the delta specs, with fictional data and no invented UI,
+reviewed before design and implementation. Changes without interface impact
+record a short exemption instead.
 
 [Schema documentation](schemas/prototype-first/README.md)
 

@@ -11,9 +11,9 @@ proposal → specs → prototype → design → tasks → apply
 
 The PRD and the design doc define behavior, but interface decisions stay
 abstract until they become navigable screens. This schema requires changes with
-visible impact to arrive at propose with self-contained HTML prototypes and
-fictional data, so review happens before implementation, the design builds on
-the prototype, and apply verifies parity with it.
+visible impact to arrive at propose with self-contained HTML prototypes derived
+from the proposal and specs, so review happens before implementation, the design
+builds on the prototype, and apply verifies parity with it.
 
 Changes with no interface impact (backend, infrastructure, tooling, or
 documentation) do not create HTML prototypes. They record an explicit
@@ -51,10 +51,18 @@ prototypes.
 - **Language:** visible text follows the language of the change request or the
   language the user explicitly asks for; `<html lang>` matches it. Code,
   comments, and identifiers stay in English.
-- **Navigable:** in-memory JavaScript represents navigation, validation, and the
-  empty/loading/error/success/no-permission states.
-- **Traceable:** the top of the HTML references the covered
-  requirements/scenarios.
+- **Grounded:** every screen, control, field, and state traces to a requirement
+  or scenario in the delta specs. Reused chrome is presentational only, and a
+  missing decision becomes a question or an `[unspecified]` placeholder, never
+  an invented feature.
+- **Styling:** an explicit library and version from the request wins; otherwise
+  the project's existing styling is followed, falling back to plain inline CSS.
+  Only styling layers are supported, and the library is vendored into the file
+  with no CDN, so `file://` keeps working.
+- **Navigable:** in-memory JavaScript represents the interactions the specs
+  define, plus only the states a scenario requires or the app already uses.
+- **Traceable:** the header maps each covered scenario to the screens,
+  controls, and states it drives, and lists reused chrome and open questions.
 
 The starting template is in [`templates/prototype.html`](templates/prototype.html).
 
