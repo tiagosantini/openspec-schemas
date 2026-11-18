@@ -72,7 +72,9 @@ die() {
 }
 
 info() {
-  printf '%s\n' "$*"
+  # A closed stdout (for example when the reader exits early) must not turn
+  # informational output into a failed install.
+  printf '%s\n' "$*" || true
 }
 
 usage() {
