@@ -223,7 +223,18 @@ jobs:
           python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
-          sleep 1
+          ready=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:8765/version.txt >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -eq 0 ]; then
+            echo "::error::The test HTTP server did not start"
+            exit 1
+          fi
           SCHEMA_BASE_URL=http://127.0.0.1:8765/schemas/prototype-first \
             sh -s -- --dir "$project" < scripts/install.sh
           grep -q '^schema: prototype-first$' "$project/openspec/config.yaml"
@@ -240,7 +251,20 @@ jobs:
           openspec init $project --tools none --no-animation
           $server = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1' -PassThru
           try {
-            Start-Sleep -Seconds 1
+            $ready = $false
+            for ($attempt = 1; $attempt -le 20; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8765/version.txt' -ErrorAction Stop | Out-Null
+                $ready = $true
+                break
+              }
+              catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $ready) {
+              throw 'The test HTTP server did not start.'
+            }
             $installer = [scriptblock]::Create((Invoke-RestMethod 'http://127.0.0.1:8765/scripts/install.ps1'))
             & $installer -Dir $project -BaseUrl 'http://127.0.0.1:8765/schemas/prototype-first'
             if (-not (Select-String -Path (Join-Path $project 'openspec/config.yaml') -Pattern '^schema: prototype-first$' -Quiet)) {
