@@ -184,6 +184,39 @@ function Read-VersionFile {
     return ([IO.File]::ReadAllText($Path)).Trim()
 }
 
+function Get-RemoteVersion {
+    # Returns the trimmed version.txt contents, or $null when unavailable.
+    # Unavailable is a normal outcome (mirrors, offline), so callers fall back.
+    param(
+        [string]$Uri,
+        [string]$WorkDir
+    )
+    $file = Join-Path $WorkDir ("version-" + [Guid]::NewGuid().ToString('N') + ".txt")
+    if (-not (Try-Download -Uri $Uri -OutFile $file)) {
+        return $null
+    }
+    return Read-VersionFile $file
+}
+
+function Get-LatestTag {
+    # Reads tag_name from a GitHub releases API response, or $null when the
+    # endpoint is unreachable, rate-limited, or has no releases.
+    param(
+        [string]$Uri,
+        [string]$WorkDir
+    )
+    $file = Join-Path $WorkDir ("latest-" + [Guid]::NewGuid().ToString('N') + ".json")
+    if (-not (Try-Download -Uri $Uri -OutFile $file)) {
+        return $null
+    }
+    $text = [IO.File]::ReadAllText($file)
+    $match = [regex]::Match($text, '"tag_name"\s*:\s*"([^"]*)"')
+    if ($match.Success) {
+        return $match.Groups[1].Value
+    }
+    return $null
+}
+
 function Get-NormalizedVersion {
     param([string]$Value)
     if (-not $Value) {
@@ -394,19 +427,37 @@ function Invoke-Installer {
             }
         }
 
-        # The version comes from the local checkout when available, otherwise
-        # from version.txt at the selected ref (or the repository root, which
-        # only moves when a release PR is merged).
+        # Install/upgrade record the version of the ref being installed. Check
+        # wants the latest release: raw.githubusercontent.com requires a ref, so
+        # the GitHub release API comes first, then HEAD (default branch), then
+        # mirror layouts. -Version needs no lookup at all.
         $targetVersion = $env:SCHEMA_VERSION
-        if (-not $targetVersion) {
+        if (-not $targetVersion -and -not $Version) {
             if ($localSource) {
                 $targetVersion = Read-VersionFile (Join-Path $repoRoot 'version.txt')
             }
+            elseif ($Check -and -not $refSet) {
+                if ($repoUrl -match '^https://raw\.githubusercontent\.com/(.+)$') {
+                    $repoPath = $Matches[1]
+                    $latestTag = Get-LatestTag -Uri "https://api.github.com/repos/$repoPath/releases/latest" -WorkDir $workDir
+                    if ($latestTag) {
+                        $targetVersion = $latestTag -replace '^v', ''
+                    }
+                }
+                if (-not $targetVersion) {
+                    $targetVersion = Get-RemoteVersion -Uri "$repoUrl/HEAD/version.txt" -WorkDir $workDir
+                }
+                if (-not $targetVersion) {
+                    $targetVersion = Get-RemoteVersion -Uri "$repoUrl/version.txt" -WorkDir $workDir
+                }
+                if (-not $targetVersion) {
+                    $targetVersion = Get-RemoteVersion -Uri "$repoUrl/$Ref/version.txt" -WorkDir $workDir
+                }
+            }
             else {
-                $versionUrl = if ($refSet) { "$repoUrl/$Ref/version.txt" } else { "$repoUrl/version.txt" }
-                $versionFile = Join-Path $workDir 'version.txt'
-                if (Try-Download -Uri $versionUrl -OutFile $versionFile) {
-                    $targetVersion = Read-VersionFile $versionFile
+                $targetVersion = Get-RemoteVersion -Uri "$repoUrl/$Ref/version.txt" -WorkDir $workDir
+                if (-not $targetVersion) {
+                    $targetVersion = Get-RemoteVersion -Uri "$repoUrl/version.txt" -WorkDir $workDir
                 }
             }
         }

@@ -261,10 +261,34 @@ read_version_file() {
   tr -d '[:space:]' < "$1"
 }
 
+# Prints the trimmed contents of a remote version.txt, or nothing when the URL
+# is unavailable. Unavailable is a normal outcome here (mirrors, offline), so
+# callers decide what to do instead of aborting.
+fetch_version() {
+  version_tmp="${WORKDIR}/version.$$"
+  if fetch_to "$1" "$version_tmp" >/dev/null 2>&1; then
+    read_version_file "$version_tmp"
+  fi
+  rm -f "$version_tmp"
+  return 0
+}
+
+# Prints the tag_name from a GitHub releases API response, or nothing when the
+# endpoint is unreachable, rate-limited, or the repository has no releases.
+fetch_latest_tag() {
+  tag_tmp="${WORKDIR}/latest.$$"
+  if fetch_to "$1" "$tag_tmp" >/dev/null 2>&1; then
+    sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$tag_tmp" | head -n 1
+  fi
+  rm -f "$tag_tmp"
+  return 0
+}
+
 # Latest known version for the selected ref. Local checkouts compare against
-# their own version.txt; remote installs read version.txt from the repository
-# root (the default branch, which only changes on release) or from the ref.
-resolve_target_version() {
+# their own version.txt. Remote installs read version.txt at the ref they are
+# installing, falling back to the repository root for mirrors and the CI server
+# that serve the tree without ref directories.
+resolve_install_version() {
   if [ "$TARGET_VERSION_OVERRIDE" != "" ]; then
     TARGET_VERSION=$TARGET_VERSION_OVERRIDE
     return 0
@@ -275,14 +299,47 @@ resolve_target_version() {
     return 0
   fi
 
-  TARGET_VERSION=""
-  if [ "$REF_SET" -eq 1 ]; then
-    version_url="$SCHEMA_REPO_URL/$SCHEMA_REF/version.txt"
-  else
-    version_url="$SCHEMA_REPO_URL/version.txt"
+  TARGET_VERSION=$(fetch_version "$SCHEMA_REPO_URL/$SCHEMA_REF/version.txt")
+  if [ -z "$TARGET_VERSION" ]; then
+    TARGET_VERSION=$(fetch_version "$SCHEMA_REPO_URL/version.txt")
   fi
-  if fetch_to "$version_url" "${WORKDIR}/version.txt" >/dev/null 2>&1; then
-    TARGET_VERSION=$(read_version_file "${WORKDIR}/version.txt")
+}
+
+# Latest release, used only by --check. raw.githubusercontent.com requires a
+# ref, so the repository root is not a valid URL there: query the GitHub
+# release API first, then HEAD (the default branch), then mirror layouts.
+resolve_latest_version() {
+  if [ "$TARGET_VERSION_OVERRIDE" != "" ]; then
+    TARGET_VERSION=$TARGET_VERSION_OVERRIDE
+    return 0
+  fi
+
+  if [ -n "$LOCAL_SOURCE" ] && [ -f "${REPO_ROOT}/version.txt" ]; then
+    TARGET_VERSION=$(read_version_file "${REPO_ROOT}/version.txt")
+    return 0
+  fi
+
+  if [ "$REF_SET" -eq 1 ]; then
+    TARGET_VERSION=$(fetch_version "$SCHEMA_REPO_URL/$SCHEMA_REF/version.txt")
+    return 0
+  fi
+
+  TARGET_VERSION=""
+  repo_path=${SCHEMA_REPO_URL#https://raw.githubusercontent.com/}
+  if [ "$repo_path" != "$SCHEMA_REPO_URL" ]; then
+    latest_tag=$(fetch_latest_tag "https://api.github.com/repos/${repo_path}/releases/latest")
+    if [ -n "$latest_tag" ]; then
+      TARGET_VERSION=${latest_tag#v}
+      return 0
+    fi
+  fi
+
+  TARGET_VERSION=$(fetch_version "$SCHEMA_REPO_URL/HEAD/version.txt")
+  if [ -z "$TARGET_VERSION" ]; then
+    TARGET_VERSION=$(fetch_version "$SCHEMA_REPO_URL/version.txt")
+  fi
+  if [ -z "$TARGET_VERSION" ]; then
+    TARGET_VERSION=$(fetch_version "$SCHEMA_REPO_URL/$SCHEMA_REF/version.txt")
   fi
 }
 
@@ -348,7 +405,16 @@ if [ -f "$STAMP" ] && [ -n "$HASHER" ]; then
   done
 fi
 
-resolve_target_version
+case "$ACTION" in
+  check)
+    resolve_latest_version
+    ;;
+  version)
+    ;;
+  *)
+    resolve_install_version
+    ;;
+esac
 
 # --version is read-only and always exits 0: it reports what is installed,
 # including the "unknown" case for installations made before stamping.
