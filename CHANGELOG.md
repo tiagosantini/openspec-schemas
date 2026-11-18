@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/tiagosantini/openspec-schemas/compare/v1.2.1...v1.3.0) (2026-11-18)
+
+
+### Features
+
+* **prototype:** ground prototypes in the proposal and specs ([5994f99](https://github.com/tiagosantini/openspec-schemas/commit/5994f991474af32ff9cf160bdd4bc5b9c930d0e1))
+
+
+### Bug Fixes
+
+* keep informational output from failing the install ([b08e1d6](https://github.com/tiagosantini/openspec-schemas/commit/b08e1d615a86ff8b1bc7c2028dcc180965667127))
+
 ## [1.2.1](https://github.com/tiagosantini/openspec-schemas/compare/v1.2.0...v1.2.1) (2026-11-18)
 
 
