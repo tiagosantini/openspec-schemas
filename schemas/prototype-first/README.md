@@ -48,6 +48,9 @@ prototypes.
   itself; it opens over `file://`, with no build, CDN, network, backend, or
   storage.
 - **Fictional data:** no real plate, person, document, photo, or amount.
+- **Language:** visible text follows the language of the change request or the
+  language the user explicitly asks for; `<html lang>` matches it. Code,
+  comments, and identifiers stay in English.
 - **Navigable:** in-memory JavaScript represents navigation, validation, and the
   empty/loading/error/success/no-permission states.
 - **Traceable:** the top of the HTML references the covered

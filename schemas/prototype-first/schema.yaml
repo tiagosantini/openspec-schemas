@@ -208,8 +208,17 @@ artifacts:
       - **Synthetic data only**: invent every plate, name, document, e-mail,
         phone number, photo, amount, and timestamp. Use clearly fictional
         values (for example `@example.invalid` addresses). Never use real
-        personal data, credentials, tokens, or production content. The
-        interface text is in English.
+        personal data, credentials, tokens, or production content.
+      - **Language**: write every user-visible string in the language of the
+        change request - the conversation that asked for this change. If the
+        user names a language explicitly in the prompt, that request wins.
+        Cover screen titles, labels, buttons, navigation, placeholders,
+        validation and state messages, sample data, the document `<title>`,
+        and the reviewer banner. Set `<html lang>` to the matching BCP 47 tag
+        (for example `pt-BR`, `es`, `en`). If the request leaves the language
+        unclear, ask before creating the prototype. Keep code, identifiers,
+        comments, and attribute names in English, and quote requirement and
+        scenario names exactly as written in the specs.
       - **Behavior, not a static mockup**: inline JavaScript must drive the
         represented interactions (navigation, tabs, modals, validation, and
         empty, loading, error, success, and permission states) with in-memory
