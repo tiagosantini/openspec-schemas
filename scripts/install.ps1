@@ -67,7 +67,7 @@ $SchemaName = 'prototype-first'
 # Release tag installed by default. release-please rewrites the version on this
 # exact line when it prepares a release, so keep the annotation and the
 # `$DefaultRef = 'vX.Y.Z'` shape intact.
-$DefaultRef = 'v1.2.0' # x-release-please-version
+$DefaultRef = 'v1.2.1' # x-release-please-version
 $DefaultRepoUrl = 'https://raw.githubusercontent.com/tiagosantini/openspec-schemas'
 # Files that make up the installed schema. The stamp is deliberately absent: it
 # is generated after the copy and must never be hashed or downloaded.
