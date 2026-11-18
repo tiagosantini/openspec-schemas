@@ -28,7 +28,7 @@ SCHEMA_NAME="prototype-first"
 # Release tag installed by default. release-please rewrites the version on this
 # exact line when it prepares a release, so keep the annotation and the
 # `DEFAULT_REF="vX.Y.Z"` shape intact.
-DEFAULT_REF="v1.1.0" # x-release-please-version
+DEFAULT_REF="v1.2.0" # x-release-please-version
 DEFAULT_REPO_URL="https://raw.githubusercontent.com/tiagosantini/openspec-schemas"
 
 TARGET_DIR="${SCHEMA_TARGET_DIR:-$PWD}"
